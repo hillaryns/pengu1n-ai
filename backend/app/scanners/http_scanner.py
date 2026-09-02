@@ -3,6 +3,7 @@ import re
 import httpx
 
 from app.models.result import Finding
+from app.scanners.rate_limiter import RateLimiter
 
 HTTP_TIMEOUT = 5.0
 CATEGORY = "HTTP Security"
@@ -326,8 +327,13 @@ def _check_trace_enabled(
     port: int,
     service_name: str,
     url: str,
+    *,
+    rate_limiter: RateLimiter | None = None,
 ) -> list[Finding]:
     try:
+        if rate_limiter is not None:
+            rate_limiter.acquire()
+
         options_response = httpx.request(
             "OPTIONS",
             url,
@@ -374,6 +380,8 @@ def scan_http_service(
     host: str,
     port: int,
     service_name: str,
+    *,
+    rate_limiter: RateLimiter | None = None,
 ) -> list[Finding]:
     if service_name not in ("HTTP", "HTTPS"):
         return []
@@ -382,6 +390,9 @@ def scan_http_service(
     url = f"{scheme}://{host}:{port}"
 
     try:
+        if rate_limiter is not None:
+            rate_limiter.acquire()
+
         response = httpx.get(
             url,
             timeout=HTTP_TIMEOUT,
@@ -412,6 +423,14 @@ def scan_http_service(
     if service_name == "HTTP":
         findings.extend(_check_https_redirect(host, port, response))
 
-    findings.extend(_check_trace_enabled(host, port, service_name, url))
+    findings.extend(
+        _check_trace_enabled(
+            host,
+            port,
+            service_name,
+            url,
+            rate_limiter=rate_limiter,
+        )
+    )
 
     return findings

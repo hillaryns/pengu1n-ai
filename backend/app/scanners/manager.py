@@ -4,6 +4,7 @@ import uuid
 from app.models.result import Finding, ScanResult, Service
 from app.scanners.http_scanner import scan_http_service
 from app.scanners.port_scanner import scan_ports
+from app.scanners.rate_limiter import create_rate_limiter
 from app.scanners.scan_profiles import ScanProfile, get_profile_config
 from app.scanners.scope_manager import (
     ScopeConfig,
@@ -46,10 +47,19 @@ class ScanManager:
             profile_config.requests_per_second,
             scope,
         )
+        rate_limiter = create_rate_limiter(requests_per_second)
 
-        open_ports = scan_ports(target, list(profile_config.ports))
+        open_ports = scan_ports(
+            target,
+            list(profile_config.ports),
+            rate_limiter=rate_limiter,
+        )
 
-        services: list[Service] = detect_services(target, open_ports)
+        services: list[Service] = detect_services(
+            target,
+            open_ports,
+            rate_limiter=rate_limiter,
+        )
 
         findings = []
 
@@ -60,14 +70,25 @@ class ScanManager:
                         target,
                         service.port,
                         service.name,
+                        rate_limiter=rate_limiter,
                     )
                 )
             if profile_config.enable_tls_scan and service.name == "HTTPS":
                 findings.extend(
-                    scan_tls_service(target, service.port)
+                    scan_tls_service(
+                        target,
+                        service.port,
+                        rate_limiter=rate_limiter,
+                    )
                 )
 
-        findings.extend(lookup_vulnerabilities(target, services))
+        findings.extend(
+            lookup_vulnerabilities(
+                target,
+                services,
+                rate_limiter=rate_limiter,
+            )
+        )
         findings = deduplicate_findings(findings)
         risk = calculate_risk(findings)
         completed_at = datetime.now(timezone.utc)

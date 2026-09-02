@@ -3,6 +3,7 @@ import socket
 import ssl
 
 from app.models.result import Service
+from app.scanners.rate_limiter import RateLimiter
 
 BANNER_TIMEOUT = 1.0
 MAX_BANNER_BYTES = 512
@@ -75,7 +76,15 @@ def _parse_ftp_version(banner: str) -> str | None:
     return banner[3:].strip() or None
 
 
-def _probe_line_banner(host: str, port: int) -> Service | None:
+def _probe_line_banner(
+    host: str,
+    port: int,
+    *,
+    rate_limiter: RateLimiter | None = None,
+) -> Service | None:
+    if rate_limiter is not None:
+        rate_limiter.acquire()
+
     with socket.create_connection((host, port), timeout=BANNER_TIMEOUT) as sock:
         sock.settimeout(BANNER_TIMEOUT)
         banner = _decode_banner(_recv_banner(sock))
@@ -116,7 +125,16 @@ def _probe_line_banner(host: str, port: int) -> Service | None:
     return None
 
 
-def _probe_http(host: str, port: int, *, use_tls: bool) -> Service | None:
+def _probe_http(
+    host: str,
+    port: int,
+    *,
+    use_tls: bool,
+    rate_limiter: RateLimiter | None = None,
+) -> Service | None:
+    if rate_limiter is not None:
+        rate_limiter.acquire()
+
     sock = socket.create_connection((host, port), timeout=BANNER_TIMEOUT)
     try:
         if use_tls:
@@ -141,7 +159,15 @@ def _probe_http(host: str, port: int, *, use_tls: bool) -> Service | None:
     )
 
 
-def _probe_mysql(host: str, port: int) -> Service | None:
+def _probe_mysql(
+    host: str,
+    port: int,
+    *,
+    rate_limiter: RateLimiter | None = None,
+) -> Service | None:
+    if rate_limiter is not None:
+        rate_limiter.acquire()
+
     with socket.create_connection((host, port), timeout=BANNER_TIMEOUT) as sock:
         sock.settimeout(BANNER_TIMEOUT)
         data = _recv_banner(sock)
@@ -164,20 +190,25 @@ def _probe_mysql(host: str, port: int) -> Service | None:
     return Service(port=port, name="MySQL", version=version)
 
 
-def _identify_service(host: str, port: int) -> Service:
+def _identify_service(
+    host: str,
+    port: int,
+    *,
+    rate_limiter: RateLimiter | None = None,
+) -> Service:
     fallback_name = SERVICE_MAP.get(port, f"Unknown service on port {port}")
 
     try:
         if port == 443:
-            detected = _probe_http(host, port, use_tls=True)
+            detected = _probe_http(host, port, use_tls=True, rate_limiter=rate_limiter)
         elif port in HTTP_PORTS:
-            detected = _probe_http(host, port, use_tls=False)
+            detected = _probe_http(host, port, use_tls=False, rate_limiter=rate_limiter)
         elif port == 3306:
-            detected = _probe_mysql(host, port)
+            detected = _probe_mysql(host, port, rate_limiter=rate_limiter)
         elif port in LINE_BANNER_PORTS:
-            detected = _probe_line_banner(host, port)
+            detected = _probe_line_banner(host, port, rate_limiter=rate_limiter)
         else:
-            detected = _probe_line_banner(host, port)
+            detected = _probe_line_banner(host, port, rate_limiter=rate_limiter)
 
         if detected is not None:
             return detected
@@ -187,5 +218,13 @@ def _identify_service(host: str, port: int) -> Service:
     return Service(port=port, name=fallback_name)
 
 
-def detect_services(host: str, open_ports: list[int]) -> list[Service]:
-    return [_identify_service(host, port) for port in open_ports]
+def detect_services(
+    host: str,
+    open_ports: list[int],
+    *,
+    rate_limiter: RateLimiter | None = None,
+) -> list[Service]:
+    return [
+        _identify_service(host, port, rate_limiter=rate_limiter)
+        for port in open_ports
+    ]

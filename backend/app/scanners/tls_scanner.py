@@ -4,6 +4,7 @@ import ssl
 from datetime import datetime, timezone
 
 from app.models.result import Finding
+from app.scanners.rate_limiter import RateLimiter
 
 TLS_TIMEOUT = 5.0
 CATEGORY = "TLS Security"
@@ -15,8 +16,16 @@ def _parse_cert_datetime(value: str) -> datetime:
     )
 
 
-def _get_certificate(host: str, port: int) -> dict | None:
+def _get_certificate(
+    host: str,
+    port: int,
+    *,
+    rate_limiter: RateLimiter | None = None,
+) -> dict | None:
     try:
+        if rate_limiter is not None:
+            rate_limiter.acquire()
+
         pem_cert = ssl.get_server_certificate((host, port), timeout=TLS_TIMEOUT)
         der_cert = ssl.PEM_cert_to_DER_cert(pem_cert)
         return ssl._ssl._test_decode_cert(der_cert)
@@ -219,13 +228,22 @@ def _check_certificate_validity(
     return findings
 
 
-def _get_tls_version(host: str, port: int, *, verify: bool) -> str | None:
+def _get_tls_version(
+    host: str,
+    port: int,
+    *,
+    verify: bool,
+    rate_limiter: RateLimiter | None = None,
+) -> str | None:
     context = ssl.create_default_context()
     if not verify:
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
 
     try:
+        if rate_limiter is not None:
+            rate_limiter.acquire()
+
         with socket.create_connection((host, port), timeout=TLS_TIMEOUT) as sock:
             with context.wrap_socket(sock, server_hostname=host) as tls_sock:
                 return tls_sock.version()
@@ -233,7 +251,12 @@ def _get_tls_version(host: str, port: int, *, verify: bool) -> str | None:
         return None
 
 
-def scan_tls_service(host: str, port: int) -> list[Finding]:
+def scan_tls_service(
+    host: str,
+    port: int,
+    *,
+    rate_limiter: RateLimiter | None = None,
+) -> list[Finding]:
     findings: list[Finding] = []
     negotiated_version: str | None = None
     verified_cert: dict | None = None
@@ -242,22 +265,35 @@ def scan_tls_service(host: str, port: int) -> list[Finding]:
     context = ssl.create_default_context()
 
     try:
+        if rate_limiter is not None:
+            rate_limiter.acquire()
+
         with socket.create_connection((host, port), timeout=TLS_TIMEOUT) as sock:
             with context.wrap_socket(sock, server_hostname=host) as tls_sock:
                 negotiated_version = tls_sock.version()
                 verified_cert = tls_sock.getpeercert()
                 hostname_verified = True
     except ssl.SSLCertVerificationError:
-        negotiated_version = _get_tls_version(host, port, verify=False)
-        verified_cert = _get_certificate(host, port)
+        negotiated_version = _get_tls_version(
+            host,
+            port,
+            verify=False,
+            rate_limiter=rate_limiter,
+        )
+        verified_cert = _get_certificate(host, port, rate_limiter=rate_limiter)
     except (ssl.SSLError, socket.timeout, OSError):
         return findings
 
     if negotiated_version is None:
-        negotiated_version = _get_tls_version(host, port, verify=False)
+        negotiated_version = _get_tls_version(
+            host,
+            port,
+            verify=False,
+            rate_limiter=rate_limiter,
+        )
 
     if verified_cert is None:
-        verified_cert = _get_certificate(host, port)
+        verified_cert = _get_certificate(host, port, rate_limiter=rate_limiter)
 
     findings.extend(_check_tls_version(host, negotiated_version, port))
     findings.extend(
