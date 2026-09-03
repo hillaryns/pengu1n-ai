@@ -38,6 +38,7 @@ class ScanSummary(BaseModel):
     duration_seconds: float
     risk_severity: str
     finding_count: int
+    risk_counts: dict[str, int] = Field(default_factory=dict)
 
 class ScanResult(BaseModel):
     scan_id: str

@@ -121,6 +121,8 @@ class PersistenceTests(unittest.TestCase):
         summaries = list_scan_summaries()
         self.assertEqual(len(summaries), 2)
         self.assertEqual(summaries[0].finding_count, 2)
+        self.assertEqual(summaries[0].risk_counts.get("HIGH"), 1)
+        self.assertEqual(summaries[0].risk_counts.get("MEDIUM"), 1)
 
     def test_retrieving_persisted_report(self):
         scan_result = _sample_scan_result("scan-db-5")

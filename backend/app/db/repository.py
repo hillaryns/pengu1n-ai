@@ -210,6 +210,7 @@ class ScanRepository:
                     duration_seconds=record.duration_seconds,
                     risk_severity=record.risk_severity,
                     finding_count=len(record.findings),
+                    risk_counts=record.risk_counts or {},
                 )
                 for record in records
             ]
