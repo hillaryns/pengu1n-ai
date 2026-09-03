@@ -4,6 +4,8 @@ from secrets import compare_digest
 from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
+from app.core.config import load_environment
+
 API_KEY_HEADER_NAME = "X-API-Key"
 
 api_key_header = APIKeyHeader(name=API_KEY_HEADER_NAME, auto_error=False)
@@ -19,6 +21,7 @@ def reset_api_key_cache() -> None:
 def load_api_keys() -> list[str]:
     global _cached_api_keys
     if _cached_api_keys is None:
+        load_environment()
         raw_value = os.getenv("PENGU1N_API_KEYS", "")
         _cached_api_keys = [
             api_key.strip()

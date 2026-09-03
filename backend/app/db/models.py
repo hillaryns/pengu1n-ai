@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -83,5 +83,7 @@ class ReportRecord(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     executive_summary: Mapped[str] = mapped_column(Text, nullable=False)
     recommendations: Mapped[list] = mapped_column(JSON, nullable=False)
+    cve_summary: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    ai_enhanced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     scan: Mapped[ScanRecord] = relationship(back_populates="report")

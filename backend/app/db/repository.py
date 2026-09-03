@@ -3,8 +3,9 @@ from sqlalchemy.orm import joinedload
 
 from app.db.database import get_session
 from app.db.models import FindingRecord, ReportRecord, ScanRecord, ServiceRecord
-from app.models.report import SecurityReport
+from app.models.report import CveSummaryItem, SecurityReport
 from app.models.result import Finding, RiskSummary, ScanResult, ScanSummary, Service
+from app.scanners.report_generator import build_cve_summary, prioritize_findings
 
 
 class DatabaseError(Exception):
@@ -56,8 +57,15 @@ def _to_scan_result(record: ScanRecord) -> ScanResult:
     )
 
 
+def _to_cve_summary_items(raw_items: list | None, scan_result: ScanResult) -> list[CveSummaryItem]:
+    if raw_items:
+        return [CveSummaryItem.model_validate(item) for item in raw_items]
+    return build_cve_summary(scan_result.findings, scan_result.services)
+
+
 def _to_security_report(record: ScanRecord, report: ReportRecord) -> SecurityReport:
     scan_result = _to_scan_result(record)
+    prioritized = prioritize_findings(scan_result.findings)
     return SecurityReport(
         report_id=report.report_id,
         scan_id=record.scan_id,
@@ -67,9 +75,12 @@ def _to_security_report(record: ScanRecord, report: ReportRecord) -> SecurityRep
         duration_seconds=record.duration_seconds,
         risk=scan_result.risk,
         services=scan_result.services,
-        findings=scan_result.findings,
+        findings=prioritized,
+        prioritized_findings=prioritized,
+        cve_summary=_to_cve_summary_items(report.cve_summary, scan_result),
         executive_summary=report.executive_summary,
         recommendations=report.recommendations or [],
+        ai_enhanced=bool(report.ai_enhanced),
     )
 
 
@@ -126,6 +137,8 @@ class ScanRepository:
                 generated_at=report.generated_at,
                 executive_summary=report.executive_summary,
                 recommendations=report.recommendations,
+                cve_summary=[item.model_dump() for item in report.cve_summary],
+                ai_enhanced=report.ai_enhanced,
             )
 
             session.add(scan_record)

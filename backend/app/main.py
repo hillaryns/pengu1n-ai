@@ -2,12 +2,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.core.config import load_environment
 from app.api.scan import router as scan_router
 from app.db.database import init_db
+
+# Load backend/.env before request handling so PENGU1N_API_KEYS is available.
+load_environment()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    load_environment()
     init_db()
     yield
 

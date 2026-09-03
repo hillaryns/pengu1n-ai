@@ -2,7 +2,7 @@ import ipaddress
 import re
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.scanners.scope_manager import ScopeConfig, enforce_scope_rules
 
@@ -13,6 +13,25 @@ HOSTNAME_PATTERN = re.compile(
 
 
 class ScanRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "target": "127.0.0.1",
+                    "profile": "standard",
+                },
+                {
+                    "target": "127.0.0.1",
+                    "profile": "bug_bounty",
+                    "scope": {
+                        "allowed_hosts": ["127.0.0.1"],
+                        "excluded_hosts":[],
+                        "requests_per_second": 2
+                    },
+                },
+            ],
+        },
+    )
     target: str
     profile: Literal["quick", "standard", "deep", "bug_bounty"] = "standard"
     scope: ScopeConfig | None = None
